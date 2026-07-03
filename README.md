@@ -9,8 +9,9 @@ This project is used by a private command-center workflow to summarize public ti
 - Reads public Stocktwits symbol streams.
 - Reads public Reddit subreddit search feeds for ticker/company mentions while official Reddit Data API access is pending.
 - Produces rough keyword sentiment summaries for human review.
-- Caches repeated requests to avoid unnecessary source traffic.
+- Caches repeated requests to avoid unnecessary source traffic, including a disk-backed process restart cache.
 - Applies request timeouts, low default limits, and Reddit request delays.
+- Falls back to stale cached Reddit data if Reddit rate-limits or times out.
 - Exposes the data through read-only MCP tools.
 
 ## Reddit API Access Status
@@ -59,9 +60,11 @@ The server is designed to be conservative:
 
 - Reddit requests default to a 45-minute cache TTL.
 - Stocktwits requests default to a 5-minute cache TTL.
+- Cache entries are written to a local ignored cache directory by default.
 - Reddit subreddit requests are delayed by default.
 - HTTP calls have a 12-second timeout.
 - Reddit 429 Too Many Requests responses are retried once after a short delay.
+- If Reddit still fails and a prior cache entry exists, the server can return marked stale data instead of making repeated live calls.
 - Tool schemas expose cache TTL and limit options with bounded min/max values.
 
 ## Install
@@ -101,7 +104,9 @@ The smoke test uses small limits and one Reddit subreddit.
 
 ## Data Handling
 
-This server returns public post/message excerpts and links for private human review. It does not persist raw source data to disk. The in-memory cache is process-local and expires automatically.
+This server returns public post/message excerpts and links for private human review.
+
+The disk cache stores only bounded tool response payloads for ticker/subreddit queries, expires automatically, and is ignored by git.
 
 ## Compliance Intent
 

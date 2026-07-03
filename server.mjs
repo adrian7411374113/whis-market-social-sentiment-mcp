@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { createHash } from "node:crypto";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { XMLParser } from "fast-xml-parser";
 import { z } from "zod";
 
@@ -9,6 +12,7 @@ const REDDIT_BASE = "https://www.reddit.com";
 const USER_AGENT = "WhisMarketSocialSentiment/1.0 (read-only council review)";
 const HTTP_TIMEOUT_MS = 12000;
 const CACHE = new Map();
+const DISK_CACHE_DIR = process.env.MARKET_SOCIAL_SENTIMENT_CACHE_DIR || join(process.cwd(), "cache");
 const DEFAULT_STOCKTWITS_CACHE_MS = 5 * 60 * 1000;
 const DEFAULT_REDDIT_CACHE_MS = 45 * 60 * 1000;
 const DEFAULT_SUBREDDITS = ["stocks", "investing", "wallstreetbets", "SecurityAnalysis"];
@@ -45,15 +49,62 @@ function stableJson(value) {
   return "{" + Object.keys(value).sort().map((key) => JSON.stringify(key) + ":" + stableJson(value[key])).join(",") + "}";
 }
 
-async function cached(key, ttlMs, load) {
+function cachePathForKey(key) {
+  const digest = createHash("sha256").update(key).digest("hex");
+  return join(DISK_CACHE_DIR, digest + ".json");
+}
+
+async function readDiskCache(key) {
+  try {
+    const raw = await readFile(cachePathForKey(key), "utf8");
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+async function writeDiskCache(key, value, expiresAt) {
+  await mkdir(DISK_CACHE_DIR, { recursive: true });
+  await writeFile(cachePathForKey(key), JSON.stringify({ value, expiresAt, updatedAt: Date.now() }, null, 2) + "\n", "utf8");
+}
+
+function withCacheMeta(value, key, hit, expiresAt, stale = false, staleReason = null) {
+  return {
+    ...value,
+    cache: {
+      hit,
+      stale,
+      key,
+      expiresAt: new Date(expiresAt).toISOString(),
+      ...(staleReason ? { staleReason } : {})
+    }
+  };
+}
+
+async function cached(key, ttlMs, load, opts = {}) {
   const now = Date.now();
   const hit = CACHE.get(key);
   if (hit && hit.expiresAt > now) {
-    return { ...hit.value, cache: { hit: true, key, expiresAt: new Date(hit.expiresAt).toISOString() } };
+    return withCacheMeta(hit.value, key, true, hit.expiresAt);
   }
-  const value = await load();
-  CACHE.set(key, { value, expiresAt: now + ttlMs });
-  return { ...value, cache: { hit: false, key, expiresAt: new Date(now + ttlMs).toISOString() } };
+  const diskHit = await readDiskCache(key);
+  if (diskHit?.expiresAt > now) {
+    CACHE.set(key, { value: diskHit.value, expiresAt: diskHit.expiresAt });
+    return withCacheMeta(diskHit.value, key, true, diskHit.expiresAt);
+  }
+  try {
+    const value = await load();
+    const expiresAt = now + ttlMs;
+    CACHE.set(key, { value, expiresAt });
+    await writeDiskCache(key, value, expiresAt);
+    return withCacheMeta(value, key, false, expiresAt);
+  } catch (error) {
+    if (opts.allowStaleOnError && diskHit?.value) {
+      CACHE.set(key, { value: diskHit.value, expiresAt: now + Math.min(ttlMs, 10 * 60 * 1000) });
+      return withCacheMeta(diskHit.value, key, true, now, true, error.message);
+    }
+    throw error;
+  }
 }
 
 function scoreText(text) {
@@ -256,7 +307,7 @@ export async function fetchRedditTickerSentiment(args) {
     posts: posts.sort((a, b) => String(b.updated || "").localeCompare(String(a.updated || ""))).slice(0, clampInt(args.maxPosts, 5, 60, 30)),
     errors
   };
-  });
+  }, { allowStaleOnError: true });
 }
 
 export async function fetchCombinedSocialSentiment(args) {
