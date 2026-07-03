@@ -149,11 +149,14 @@ function compactResult(result) {
       error: result.stocktwits?.error || null,
       cache: result.stocktwits?.cache || null,
       summary: result.stocktwits?.summary || null,
-      topMessages: (result.stocktwits?.topMessages || []).slice(0, 3).map((item) => ({
+      topMessages: (result.stocktwits?.topMessages || []).slice(0, 10).map((item) => ({
+        id: item.id,
         createdAt: item.createdAt,
         body: item.body,
+        user: item.user?.username || null,
         sentiment: item.sentiment,
-        likes: item.likes
+        likes: item.likes,
+        url: item.id ? "https://stocktwits.com/symbol/" + encodeURIComponent(result.symbol) + "/message/" + encodeURIComponent(String(item.id)) : null
       }))
     },
     reddit: {
@@ -162,11 +165,12 @@ function compactResult(result) {
       cache: result.reddit?.cache || null,
       summary: result.reddit?.summary || null,
       errors: result.reddit?.errors || [],
-      posts: (result.reddit?.posts || []).slice(0, 5).map((item) => ({
+      posts: (result.reddit?.posts || []).slice(0, 10).map((item) => ({
         subreddit: item.subreddit,
         title: item.title,
         updated: item.updated,
         link: item.link,
+        author: item.author || null,
         sentiment: item.sentiment
       }))
     }
