@@ -18,6 +18,13 @@ const SYMBOL_KEYS = new Set(["symbol", "ticker", "asset", "primaryticker", "cano
 const FALSE_POSITIVES = new Set([
   "API", "CEO", "CFO", "CTO", "ETF", "EPS", "GDP", "IPO", "MCP", "MOM", "NAV", "RSS", "SEC", "USD"
 ]);
+const SOURCE_BASE_WEIGHTS = new Map([
+  ["council-reviewed-candidates.json", 10],
+  ["ticker-signal-stack.json", 4],
+  ["pro-investor-watchlist.json", 3],
+  ["elite-watchlist.json", 3],
+  ["conviction-timing-matrix.json", 2]
+]);
 
 function getArg(name, fallback = null) {
   const prefix = "--" + name + "=";
@@ -30,6 +37,7 @@ function getFlag(name) {
 }
 
 function toInt(value, fallback, min, max) {
+  if (value == null || value === "") return fallback;
   const n = Number(value);
   if (!Number.isFinite(n)) return fallback;
   return Math.max(min, Math.min(max, Math.trunc(n)));
@@ -51,22 +59,43 @@ function addSymbol(scores, raw, source, weight = 1) {
   scores.set(symbol, item);
 }
 
-function walkForSymbols(value, scores, source, key = "") {
+function socialPriorityForRecord(record, fileName) {
+  let weight = SOURCE_BASE_WEIGHTS.get(fileName) || 1;
+  const verdict = String(record?.councilVerdict || "").toLowerCase();
+  const priority = String(record?.researchPriority || "").toLowerCase();
+  const intake = Array.isArray(record?.intakeBuckets) ? record.intakeBuckets.map(String) : [];
+  const rank = Number(record?.finalRank);
+  const score = Number(record?.finalScore ?? record?.researchPriorityScore ?? record?.score);
+
+  if (Number.isFinite(rank) && rank > 0) weight += Math.max(0, 42 - rank);
+  if (record?.topResearchCandidate) weight += 30;
+  if (priority === "research-now") weight += 28;
+  else if (priority === "high-watch") weight += 20;
+  else if (priority === "speculative-research") weight += 12;
+  if (verdict === "promote") weight += 28;
+  else if (verdict === "watch") weight += 16;
+  else if (verdict === "demote") weight += 4;
+  if (intake.includes("watchlist-review")) weight += 18;
+  if (Number.isFinite(score)) weight += Math.max(0, Math.min(20, Math.round((score - 60) / 2)));
+  return weight;
+}
+
+function walkForSymbols(value, scores, source, key = "", weight = 1) {
   if (value == null) return;
   if (typeof value === "string") {
-    if (SYMBOL_KEYS.has(key.toLowerCase())) addSymbol(scores, value, source, 4);
+    if (SYMBOL_KEYS.has(key.toLowerCase())) addSymbol(scores, value, source, weight);
     return;
   }
   if (Array.isArray(value)) {
-    for (const item of value.slice(0, 600)) walkForSymbols(item, scores, source, key);
+    for (const item of value.slice(0, 600)) walkForSymbols(item, scores, source, key, weight);
     return;
   }
   if (typeof value !== "object") return;
   for (const [childKey, childValue] of Object.entries(value).slice(0, 800)) {
     if (SYMBOL_KEYS.has(childKey.toLowerCase()) && typeof childValue === "string") {
-      addSymbol(scores, childValue, source, 4);
+      addSymbol(scores, childValue, source, weight);
     } else {
-      walkForSymbols(childValue, scores, source, childKey);
+      walkForSymbols(childValue, scores, source, childKey, weight);
     }
   }
 }
@@ -89,7 +118,17 @@ async function discoverSymbols(sourceFiles) {
   for (const fileName of sourceFiles) {
     const file = fileName.startsWith("/") ? fileName : join(MISSION_MARKET_DIR, fileName);
     try {
-      walkForSymbols(await readJson(file), scores, basename(file), 1);
+      const data = await readJson(file);
+      const fileBase = basename(file);
+      const rows = Array.isArray(data?.records) ? data.records
+        : Array.isArray(data?.tickers) ? data.tickers
+        : Array.isArray(data?.rows) ? data.rows
+        : [];
+      for (const row of rows.slice(0, 220)) {
+        const symbol = row?.symbol || row?.ticker || row?.asset || row?.primaryTicker || row?.canonicalTicker;
+        addSymbol(scores, symbol, fileBase, socialPriorityForRecord(row, fileBase));
+      }
+      walkForSymbols(data, scores, fileBase, "", SOURCE_BASE_WEIGHTS.get(fileBase) || 1);
     } catch (error) {
       console.error(JSON.stringify({ level: "warn", message: "source_read_failed", file, error: error.message }));
     }
