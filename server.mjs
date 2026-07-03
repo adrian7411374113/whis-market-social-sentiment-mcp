@@ -313,9 +313,27 @@ export async function fetchRedditTickerSentiment(args) {
 export async function fetchCombinedSocialSentiment(args) {
   const symbol = cleanSymbol(args.symbol);
   const company = cleanText(args.company || "");
+  const skippedReddit = Boolean(args.skipReddit);
   const [stocktwits, reddit] = await Promise.allSettled([
     fetchStocktwitsSymbolSentiment({ symbol, limit: args.stocktwitsLimit ?? 20 }),
-    fetchRedditTickerSentiment({
+    skippedReddit ? Promise.resolve({
+      source: "reddit-rss",
+      symbol,
+      company: company || null,
+      subreddits: args.subreddits || [],
+      fetchedAt: new Date().toISOString(),
+      skipped: true,
+      skipReason: args.skipRedditReason || "reddit cooldown",
+      summary: {
+        itemCount: 0,
+        counts: { bullish: 0, bearish: 0, neutral: 0 },
+        roughScore: 0,
+        roughLabel: "mixed/neutral",
+        note: "Reddit fetch skipped by prefetch cooldown."
+      },
+      posts: [],
+      errors: []
+    }) : fetchRedditTickerSentiment({
       symbol,
       company,
       subreddits: args.subreddits,
@@ -382,6 +400,8 @@ server.registerTool("market_social_sentiment", {
     company: z.string().optional(),
     subreddits: z.array(z.string()).optional(),
     stocktwitsLimit: z.number().int().min(5).max(30).optional(),
+    skipReddit: z.boolean().optional(),
+    skipRedditReason: z.string().optional(),
     redditLimitPerSubreddit: z.number().int().min(3).max(15).optional(),
     redditMaxPosts: z.number().int().min(5).max(60).optional(),
     redditRequestDelayMs: z.number().int().min(0).max(5000).optional(),
