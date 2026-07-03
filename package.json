@@ -5,6 +5,7 @@
   "main": "server.mjs",
   "scripts": {
     "start": "node server.mjs",
+    "prefetch": "node scripts/prefetch.mjs",
     "smoke": "node scripts/smoke.mjs"
   },
   "license": "UNLICENSED",

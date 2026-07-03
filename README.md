@@ -10,6 +10,7 @@ This project is used by a private command-center workflow to summarize public ti
 - Reads public Reddit subreddit search feeds for ticker/company mentions while official Reddit Data API access is pending.
 - Produces rough keyword sentiment summaries for human review.
 - Caches repeated requests to avoid unnecessary source traffic, including a disk-backed process restart cache.
+- Includes an optional prefetch job that warms cache for active council/watchlist tickers.
 - Applies request timeouts, low default limits, and Reddit request delays.
 - Falls back to stale cached Reddit data if Reddit rate-limits or times out.
 - Exposes the data through read-only MCP tools.
@@ -93,6 +94,18 @@ npm run smoke -- NVDA NVIDIA
 
 The smoke test uses small limits and one Reddit subreddit.
 
+## Optional Prefetch
+
+```bash
+npm run prefetch -- --max-symbols=12
+```
+
+The prefetch script discovers active symbols from local market review JSON files when available, fetches them sequentially, warms the disk cache, and writes an ignored `snapshots/prefetch-latest.json` file for private council review. You can also pass explicit symbols:
+
+```bash
+npm run prefetch -- --symbols=NVDA,TSLA --max-symbols=2 --no-history
+```
+
 ## MCP Registration Example
 
 ```json
@@ -107,6 +120,8 @@ The smoke test uses small limits and one Reddit subreddit.
 This server returns public post/message excerpts and links for private human review.
 
 The disk cache stores only bounded tool response payloads for ticker/subreddit queries, expires automatically, and is ignored by git.
+
+Prefetch snapshots are local/private operational artifacts and are ignored by git.
 
 ## Compliance Intent
 

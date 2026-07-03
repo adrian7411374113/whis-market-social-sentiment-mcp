@@ -12,3 +12,4 @@ coverage/
 dist/
 tmp/
 cache/
+snapshots/
