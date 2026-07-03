@@ -7,11 +7,17 @@ This project is used by a private command-center workflow to summarize public ti
 ## What It Does
 
 - Reads public Stocktwits symbol streams.
-- Reads public Reddit subreddit search feeds for ticker/company mentions.
+- Reads public Reddit subreddit search feeds for ticker/company mentions while official Reddit Data API access is pending.
 - Produces rough keyword sentiment summaries for human review.
 - Caches repeated requests to avoid unnecessary source traffic.
 - Applies request timeouts, low default limits, and Reddit request delays.
 - Exposes the data through read-only MCP tools.
+
+## Reddit API Access Status
+
+This repository is prepared for Reddit developer review. The current Reddit path uses public Atom/RSS search as a low-volume fallback because unauthenticated Reddit JSON requests are unreliable from server environments.
+
+If Reddit Data API access is approved, Reddit reads should be moved behind registered OAuth/Data API credentials and continue to use the same conservative controls: narrow subreddit scope, ticker-specific queries, caching, request delays, and rate-limit backoff.
 
 ## What It Does Not Do
 
@@ -30,7 +36,7 @@ This project is used by a private command-center workflow to summarize public ti
   - Uses Stocktwits explicit bullish/bearish tags when present, otherwise a small keyword screen.
 
 - reddit_ticker_sentiment
-  - Reads Reddit public Atom/RSS search results for selected finance subreddits.
+  - Reads Reddit public Atom/RSS search results for selected finance subreddits while Data API access is pending.
   - Defaults to a small subreddit set and caches ticker/subreddit searches.
 
 - market_social_sentiment
